@@ -2,6 +2,7 @@ from plexapi.server import PlexServer
 import feedparser
 import requests
 
+from datetime import datetime
 import argparse
 import logging
 import time
@@ -55,6 +56,12 @@ def plex_rename():
     show = plex.library.section('TV Shows').get(show_name)
     season = next((s for s in show.seasons() if s.title == season_name), None)
     episodes = season.episodes()
+
+    episodes_sorted = sorted(episodes, key=lambda ep: ep.index or 0)
+
+    last_episode_number = episodes_sorted[-1].index if episodes_sorted else 0
+    next_episode_number = last_episode_number + 1
+
     for episode in episodes:
         episode_title = episode.title
         episode_filename = str(episode.media[0].parts[0].file)
@@ -67,8 +74,21 @@ def plex_rename():
                 .split(" 1080p60")[0]
                 .replace(" RS ", " ")
             )
-            logging.info(f"Renaming Plex episode title: {episode_title} to: {new_title}")
+            
+            date_str = new_title.split()[0]
+            # Convert DD-MM-YYYY to YYYY-MM-DD
+            parsed_date = datetime.strptime(date_str, "%d-%m-%Y").strftime("%Y-%m-%d")
+
             episode.edit(**{'title.value': new_title, 'title.locked': 1})
+            logging.info(f"Renaming Plex episode title: {episode_title} to: {new_title}")
+            episode.edit(**{'index.value': next_episode_number, 'index.locked': 1})
+            logging.info(f"Updated new episode: {new_title} to Episode number: {next_episode_number}")
+            episode.edit(**{'originallyAvailableAt.value': parsed_date, 'originallyAvailableAt.locked': 1})
+            logging.info(f"Updated air date for '{new_title}' to {parsed_date}")
+        
+        if not episode.thumb or "default" in episode.thumb:
+            logging.info(f"Episode '{episode.title}' is missing a thumbnail. Refreshing metadata...")
+            episode.refresh()
 
 sleep_time = 300
 
